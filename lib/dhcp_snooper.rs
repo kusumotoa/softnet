@@ -2,14 +2,22 @@ use dhcproto::Decodable;
 use dhcproto::v4::{DhcpOption, MessageType, OptionCode};
 use smoltcp::wire::Ipv4Address;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Default)]
 pub struct DhcpSnooper {
     vm_lease: Option<Lease>,
+    uncertainty_duration: Duration,
 }
 
 impl DhcpSnooper {
+    pub fn new(uncertainty_duration: Duration) -> Self {
+        DhcpSnooper {
+            uncertainty_duration,
+            ..Default::default()
+        }
+    }
+
     pub fn register_dhcp_reply(&mut self, dhcp_packet: &[u8]) {
         let mut decoder = dhcproto::v4::Decoder::new(dhcp_packet);
 
@@ -32,11 +40,12 @@ impl DhcpSnooper {
                     _ => HashSet::new(),
                 };
 
-                self.vm_lease = Some(Lease::new(
-                    message.yiaddr(),
-                    Duration::from_secs(*lease_time as u64),
-                    dns_ips,
-                ))
+                let mut lease_duration = Duration::from_secs(*lease_time as u64);
+
+                // Adjust for uncertainty caused by using a coarse clock
+                lease_duration = lease_duration.saturating_sub(self.uncertainty_duration);
+
+                self.vm_lease = Some(Lease::new(message.yiaddr(), lease_duration, dns_ips))
             }
             Some(MessageType::Nak) => {
                 self.vm_lease = None;
@@ -66,7 +75,7 @@ impl DhcpSnooper {
 #[derive(Debug)]
 pub struct Lease {
     address: Ipv4Address,
-    valid_until: Instant,
+    valid_until: coarsetime::Instant,
     dns_ips: HashSet<Ipv4Address>,
 }
 
@@ -74,7 +83,7 @@ impl Lease {
     pub fn new(address: Ipv4Address, lease_time: Duration, dns_ips: HashSet<Ipv4Address>) -> Lease {
         Lease {
             address,
-            valid_until: Instant::now() + lease_time,
+            valid_until: coarsetime::Instant::recent() + lease_time.into(),
             dns_ips,
         }
     }
@@ -84,7 +93,7 @@ impl Lease {
     }
 
     pub fn valid(&self) -> bool {
-        Instant::now() < self.valid_until
+        coarsetime::Instant::recent() < self.valid_until
     }
 
     pub fn valid_ip_source(&self, address: Ipv4Address) -> bool {
