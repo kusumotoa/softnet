@@ -67,10 +67,15 @@ impl Proxy<'_> {
             Err(_) => return,
         };
 
-        if !udp_pkt.is_dhcp_response() {
-            return;
+        if udp_pkt.is_dhcp_response() {
+            self.dhcp_snooper.register_dhcp_reply(udp_pkt.payload());
         }
 
-        self.dhcp_snooper.register_dhcp_reply(udp_pkt.payload());
+        // Intercept DNS responses to learn IPs for allowed domains
+        if udp_pkt.is_dns_response() {
+            if let Some(dns_filter) = &mut self.dns_filter {
+                dns_filter.learn_from_dns_response(udp_pkt.payload());
+            }
+        }
     }
 }

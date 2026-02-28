@@ -7,6 +7,7 @@ use oslog::OsLogger;
 use prefix_trie::PrefixSet;
 use privdrop::PrivDrop;
 use softnet::NetType;
+use softnet::dns_filter::DnsFilter;
 use softnet::proxy::ExposedPort;
 use softnet::proxy::Proxy;
 use std::borrow::Cow;
@@ -85,6 +86,12 @@ struct Args {
         action = clap::ArgAction::Set
     )]
     expose: Vec<ExposedPort>,
+
+    #[clap(
+        long,
+        help = "path to a YAML file listing allowed DNS domains (enables DNS-based allowlist filtering)"
+    )]
+    dns_allowlist: Option<std::path::PathBuf>,
 
     #[clap(long, hide = true)]
     sudo_escalation_probing: bool,
@@ -172,7 +179,7 @@ fn try_main() -> anyhow::Result<()> {
 
             let _ = Command::new("sudo")
                 .arg("--non-interactive")
-                .arg("--preserve-env=SENTRY_DSN,CIRRUS_SENTRY_TAGS")
+                .arg("--preserve-env=SENTRY_DSN,CIRRUS_SENTRY_TAGS,SOFTNET_DNS_ALLOWLIST")
                 .arg(&exe)
                 .args(args)
                 .arg("--sudo-escalation-done")
@@ -191,6 +198,15 @@ fn try_main() -> anyhow::Result<()> {
     // Set bootpd(8) min/max lease time while still having the root privileges
     set_bootpd_lease_time(args.bootpd_lease_time);
 
+    // Load DNS allowlist filter if specified via --dns-allowlist or SOFTNET_DNS_ALLOWLIST env var
+    let dns_filter = if let Some(path) = args.dns_allowlist {
+        Some(DnsFilter::from_file(&path).context("failed to load DNS allowlist")?)
+    } else if let Ok(path) = env::var("SOFTNET_DNS_ALLOWLIST") {
+        Some(DnsFilter::from_file(std::path::Path::new(&path)).context("failed to load DNS allowlist from SOFTNET_DNS_ALLOWLIST")?)
+    } else {
+        None
+    };
+
     // Initialize the proxy while still having the root privileges
     let mut proxy = Proxy::new(
         args.vm_fd as RawFd,
@@ -199,6 +215,7 @@ fn try_main() -> anyhow::Result<()> {
         PrefixSet::from_iter(args.allow),
         PrefixSet::from_iter(args.block),
         args.expose,
+        dns_filter,
     )
     .context("failed to initialize proxy")?;
 

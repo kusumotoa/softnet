@@ -6,6 +6,7 @@ pub(crate) trait UdpPacketHelper {
     const BOOTPC_PORT: u16 = 68;
 
     fn is_dns_request(&self) -> bool;
+    fn is_dns_response(&self) -> bool;
 
     fn is_dhcp_request(&self) -> bool;
     fn is_dhcp_response(&self) -> bool;
@@ -14,6 +15,10 @@ pub(crate) trait UdpPacketHelper {
 impl UdpPacketHelper for UdpPacket<&[u8]> {
     fn is_dns_request(&self) -> bool {
         self.dst_port() == Self::DNS_PORT
+    }
+
+    fn is_dns_response(&self) -> bool {
+        self.src_port() == Self::DNS_PORT
     }
 
     fn is_dhcp_request(&self) -> bool {

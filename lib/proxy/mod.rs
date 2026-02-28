@@ -30,6 +30,7 @@ pub struct Proxy<'proxy> {
     rules: PrefixMap<Ipv4Net, Action>,
     enobufs_encountered: bool,
     port_forwarder: PortForwarder,
+    dns_filter: Option<crate::dns_filter::DnsFilter>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +47,7 @@ impl Proxy<'_> {
         allow: PrefixSet<Ipv4Net>,
         block: PrefixSet<Ipv4Net>,
         exposed_ports: Vec<ExposedPort>,
+        dns_filter: Option<crate::dns_filter::DnsFilter>,
     ) -> Result<Proxy<'proxy>> {
         let vm = VM::new(vm_fd)?;
         let host = Host::new(vm_net_type, !allow.contains(&Ipv4Net::zero()))?;
@@ -75,6 +77,7 @@ impl Proxy<'_> {
             rules,
             enobufs_encountered: false,
             port_forwarder: PortForwarder::new(exposed_ports),
+            dns_filter,
         })
     }
 
@@ -244,6 +247,7 @@ mod tests {
                     .map(|cidr| Ipv4Net::from_str(cidr).unwrap()),
             ),
             Vec::default(),
+            None,
         )
         .unwrap();
 
